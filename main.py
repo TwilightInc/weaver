@@ -225,7 +225,7 @@ class MainWindow(Gtk.ApplicationWindow):
         # Add history items to the submenu
         for url, title, timestamp in history_entries:
             # Create a Gio.MenuItem for each history entry
-            menu_item = Gio.MenuItem.new(f"{title} - {url}", f"app.history.{hashlib.md5(url.encode()).hexdigest()}")
+            menu_item = Gio.MenuItem.new(f"{title}", f"app.history.{hashlib.md5(url.encode()).hexdigest()}")
             history_items.append_item(menu_item)
             
         history_submenu.append_section(None, options)
