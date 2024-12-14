@@ -45,7 +45,7 @@ def read_or_create_config():
 class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, app_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if not os.path.exists('~/.weaver'):
+        if not os.path.exists(os.path.expanduser('~/.weaver')):
             os.makedirs('~/.weaver')
         self.hb = Adw.HeaderBar()
         self.set_titlebar(self.hb)
