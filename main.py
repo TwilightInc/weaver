@@ -46,7 +46,7 @@ class MainWindow(Gtk.ApplicationWindow):
     def __init__(self, app_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if not os.path.exists(os.path.expanduser('~/.weaver')):
-            os.makedirs('~/.weaver')
+            os.makedirs(os.path.expanduser('~/.weaver'), exist_ok=True)  # Create ~/.weaver if it doesn't exist'/.weaver')
         self.hb = Adw.HeaderBar()
         self.set_titlebar(self.hb)
         self.app_name = app_name
