@@ -1,0 +1,18 @@
+{
+  "manifest_version": 2,
+  "name": "Simple Browser Extension",
+  "version": "1.0",
+  "description": "A simple extension for testing purposes.",
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon16.png"
+  },
+  "permissions": [
+    "activeTab"
+  ]
+}

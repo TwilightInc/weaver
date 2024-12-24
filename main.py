@@ -14,11 +14,14 @@ from io import BytesIO
 from datetime import datetime
 gi.require_version('Gtk', '4.0')
 gi.require_version('WebKit', '6.0')
+gi.require_version('GObject', '2.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, WebKit, Gio, GLib, Gdk, GdkPixbuf
+from gi.repository import Gtk, Adw, WebKit, Gio, GLib, Gdk, GdkPixbuf, GObject
 from PIL import Image  # Import the Pillow library for image conversion
 import configparser
 import hashlib
+
+os.environ['GTK_INSPECTOR'] = '1'
 
 # Helper function to generate profile name
 def generate_profile_name():
@@ -42,18 +45,118 @@ def read_or_create_config():
 
     return profile_name
 
-class MainWindow(Gtk.ApplicationWindow):
+class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.hb = Adw.HeaderBar()
-        self.set_titlebar(self.hb)
         self.app_name = app_name
-        self.html = '''<h1>W.I.P.</h1><p>This page would be replaced soon</p><hr/><em>Weaver</em>'''
-
+        self.html = f"""
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" dir="ltr">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <title>Problem Loading Page</title>
+  <style>
+    /* Global CSS for error pages */
+    :root {{ 
+        --bg-color: #fafafa; 
+        --fg-color: rgba(0, 0, 0, 0.8); 
+        --base-color: #fff; 
+        --text-color: #000; 
+        --borders: #d3d7cf; 
+        --error-color: #c01c28;
+        --icon-invert: 0.2; /* icon color adjustment */
+        --error-filter: hue-rotate(-5.1deg) grayscale(45%) brightness(144%);
+        color-scheme: light dark;
+    }}
+    body {{
+        font-family: -webkit-system-font, Cantarell, sans-serif;
+        color: var(--fg-color);
+        background-color: var(--bg-color);
+        height: 100%;
+    }}
+    .error-body {{
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        max-width: 40em;
+        margin: auto;
+        padding-left: 12px;
+        padding-right: 12px;
+        line-height: 1.5;
+        height: 100%;
+    }}
+    .clickable {{
+        cursor: pointer;
+        opacity: 0.6;
+    }}
+    .clickable:hover, .clickable:focus {{
+        opacity: 0.8;
+    }}
+    #msg-title {{
+        text-align: center;
+        font-size: 20pt;
+        font-weight: 800;
+    }}
+    #msg-icon {{
+        margin-left: auto;
+        margin-right: auto;
+        width: 128px;
+        height: 128px;
+        background-size: cover;
+        opacity: 0.5;
+        filter: brightness(0) invert(var(--icon-invert));
+    }}
+    #msg-details {{
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }}
+    .btn {{
+        min-width: 200px;
+        height: 32px;
+        margin-top: 15px;
+        margin-bottom: 0;
+        line-height: 1.42857143;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: middle;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+    }}
+    .suggested-action {{
+        color: white;
+        background-color: #3584e4;
+    }}
+    .suggested-action:hover, .suggested-action:focus, .suggested-action:active {{
+        color: white;
+        background-color: #3987e5;
+    }}
+    .destructive-action {{
+        color: white;
+        background-color: #e01b24;
+    }}
+    .destructive-action:hover, .destructive-action:focus, .destructive-action:active {{
+        color: white;
+        background-color: #e41c26;
+    }}
+  </style>
+</head>
+<body class="error-body">
+  <h1 id="msg-title">Work in progress</h1>
+  <p>This page is currently under construction.</p>
+  <p>Expect to see some changes soon.</p>
+  <div>
+    <button class="btn suggested-action" onclick="">Suggest a feature</button>
+  </div>
+</body>
+</html>
+"""
         # Create a Box for layout
         self.a = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
         # Create TabView and TabBar
+        self.a.append(self.hb)
         self.tab_view = Adw.TabView(vexpand=True)
         self.tab_bar = Adw.TabBar()
         self.tab_bar.set_view(self.tab_view)
@@ -73,15 +176,15 @@ class MainWindow(Gtk.ApplicationWindow):
         self.url_entry = Gtk.Entry()
         self.url_entry.set_text("")  # Set default URL
         self.url_entry.set_placeholder_text("Enter a URL or search...")  # Set placeholder text
-        self.url_entry.set_width_chars(80)  # Increase width of the URL Entry
         self.url_entry.connect("changed", self.on_url_changed)  # Connect signal when text changes
         self.url_entry.connect("activate", self.on_url_activated)  # Connect signal when Enter is pressed
-
+        self.url_entry.set_width_chars(80)
         # Set the Entry widget as the title widget in the HeaderBar
         self.hb.set_title_widget(self.url_entry)
+        self.set_title("Weaver")
 
         # Add the layout (Box) to the window
-        self.set_child(self.a)
+        self.set_content(self.a)
 
         # Apply CSS styling for transparent buttons on the left
         self.apply_button_style()
@@ -225,11 +328,18 @@ class MainWindow(Gtk.ApplicationWindow):
         # Add history items to the submenu
         for url, title, timestamp in history_entries:
             # Create a Gio.MenuItem for each history entry
-            menu_item = Gio.MenuItem.new(f"{title}", f"app.history.{hashlib.md5(url.encode()).hexdigest()}")
+            menu_item = Gio.MenuItem.new(f"{title}", f"app.history_item('{url}')")
             history_items.append_item(menu_item)
             
         history_submenu.append_section(None, options)
         history_submenu.append_section("Recent history", history_items)
+
+    def change_url(self, url):
+        # Handle URL change
+        current_tab = self.tab_view.get_selected_page()
+        webview = current_tab.get_child()
+        if isinstance(webview, WebKit.WebView):
+            webview.load_uri(url)
             
     # Method to handle history item selection
     def on_history_item_selected(self, menu_item, url):
@@ -267,7 +377,7 @@ class MainWindow(Gtk.ApplicationWindow):
         # Add bookmarks to the menu
         for url, title in bookmarks:
             # Create a Gio.MenuItem for each bookmark
-            menu_item = Gio.MenuItem.new(title, f"app.bookmark.{hashlib.md5(url.encode()).hexdigest()}")
+            menu_item = Gio.MenuItem.new(title, f"app.bookmark_item('{url}')")
             self.bookmarks_menu.append_item(menu_item)
 
     def on_bookmark_selected(self, menu_item, url):
@@ -296,9 +406,11 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def on_url_activated(self, entry):
         url = entry.get_text()
-        if not re.search(r'.*\.[a-z]{2,6}$.*', url):
+        if url.startswith("file://"):
+            url = url
+        elif not re.search(r'.*\.[a-z]{2,6}(/.*)?$', url):
             url = f"https://www.duckduckgo.com/?q={url}"
-        if not url.startswith("http://") and not url.startswith("https://"):
+        elif not url.startswith("http://") and not url.startswith("https://"):
             url = "http://" + url
 
         current_tab = self.tab_view.get_selected_page()
@@ -501,6 +613,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
                     else:
                         print("No favicon found in the HTML.")
+
                         return None  # No favicon was found
 
                 except requests.exceptions.RequestException as e:
@@ -524,10 +637,14 @@ class MainWindow(Gtk.ApplicationWindow):
                     # Set lock icon for the URL entry
                     self.url_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-lock-screen")
 
+                self.reload_icon.set_from_icon_name("view-refresh-symbolic")
+                self.update_navigation_buttons(webview)
+
                 # Fetch the HTML page to update the title
                 response = requests.get(current_url)
                 html = response.text
                 self.update_title_from_html(html)
+                self.set_title(f"{self.get_title_from_url(current_url)} - Weaver")
                     
                 if current_url.startswith("http://") or current_url.startswith("https://"):
                     self.current_url_to_bookmark = current_url
@@ -538,9 +655,9 @@ class MainWindow(Gtk.ApplicationWindow):
                 
                 # Add bookmark functionality
                 self.populate_history_submenu(self.history_submenu)
-
-            self.reload_icon.set_from_icon_name("view-refresh-symbolic")
-            self.update_navigation_buttons(webview)
+            else:
+                self.reload_icon.set_from_icon_name("view-refresh-symbolic")
+                self.update_navigation_buttons(webview)
 
     def get_base_url(self, url):
         # Extract the base URL (protocol + domain) from the full URL
@@ -592,7 +709,7 @@ class MainWindow(Gtk.ApplicationWindow):
         if response == Gtk.ResponseType.OK:
             name = name_entry.get_text()
             url = url_entry.get_text()
-            self.add_bookmark(name, url)
+            self.add_bookmark(url, name)
             self.populate_bookmarks_menu()
         dialog.close()
           
@@ -639,16 +756,154 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def create_new_tab(self, url=None):
         webview = WebKit.WebView()
-        webview.load_uri(f'data:text/html,{self.html}')
+        webview.load_html(self.html)
+        webview.connect("context-menu", self.on_context_menu)
+        inspector = WebKit.WebView.get_inspector(webview)
+        inspector.connect("attach", self.on_attach_inspector, webview)
         title = "New tab"
         tab = self.tab_view.append(webview)
         tab.set_title(title)
         self.tab_view.set_selected_page(tab)
         webview.connect("load-changed", self.on_webview_load_changed)
+        webview.connect("load-failed", self.on_webview_load_failed)
+
+    def on_context_menu(self, webview, context_menu, hit_test_result):
+        WebKit.ContextMenu.append(context_menu, WebKit.ContextMenuItem.new_separator())
+        WebKit.ContextMenu.append(context_menu, WebKit.ContextMenuItem.new_from_stock_action(WebKit.ContextMenuAction.INSPECT_ELEMENT))
+
+    def on_attach_inspector(self, inspector, webview):
+        print(inspector)
+        print(webview)
+        inspector.show()
 
     def on_new_tab_clicked(self, button):
         self.create_new_tab()
 
+    def on_test_button_clicked(self, button):
+        width = self.get_width()
+        print(f"Window width: {width}")
+
+    def on_webview_load_failed(self, webview, frame, error, failed_uri):
+        # This method will be called when page loading fails (e.g., connection refused)
+        
+        # Prepare the error page HTML
+        error_page_html = f"""
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" dir="ltr">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <title>Problem Loading Page</title>
+  <style>
+    /* Global CSS for error pages */
+    :root {{ 
+        --bg-color: #fafafa; 
+        --fg-color: rgba(0, 0, 0, 0.8); 
+        --base-color: #fff; 
+        --text-color: #000; 
+        --borders: #d3d7cf; 
+        --error-color: #c01c28;
+        --icon-invert: 0.2; /* icon color adjustment */
+        --error-filter: hue-rotate(-5.1deg) grayscale(45%) brightness(144%);
+        color-scheme: light dark;
+    }}
+    body {{
+        font-family: -webkit-system-font, Cantarell, sans-serif;
+        color: var(--fg-color);
+        background-color: var(--bg-color);
+        height: 100%;
+    }}
+    .error-body {{
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        max-width: 40em;
+        margin: auto;
+        padding-left: 12px;
+        padding-right: 12px;
+        line-height: 1.5;
+        height: 100%;
+    }}
+    .clickable {{
+        cursor: pointer;
+        opacity: 0.6;
+    }}
+    .clickable:hover, .clickable:focus {{
+        opacity: 0.8;
+    }}
+    #msg-title {{
+        text-align: center;
+        font-size: 20pt;
+        font-weight: 800;
+    }}
+    #msg-icon {{
+        margin-left: auto;
+        margin-right: auto;
+        width: 128px;
+        height: 128px;
+        background-size: cover;
+        opacity: 0.5;
+        filter: brightness(0) invert(var(--icon-invert));
+    }}
+    #msg-details {{
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }}
+    .btn {{
+        min-width: 200px;
+        height: 32px;
+        margin-top: 15px;
+        margin-bottom: 0;
+        line-height: 1.42857143;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: middle;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+    }}
+    .suggested-action {{
+        color: white;
+        background-color: #3584e4;
+    }}
+    .suggested-action:hover, .suggested-action:focus, .suggested-action:active {{
+        color: white;
+        background-color: #3987e5;
+    }}
+    .destructive-action {{
+        color: white;
+        background-color: #e01b24;
+    }}
+    .destructive-action:hover, .destructive-action:focus, .destructive-action:active {{
+        color: white;
+        background-color: #e41c26;
+    }}
+  </style>
+</head>
+<body class="error-body">
+  <svg id="msg-icon" xmlns="http://www.w3.org/2000/svg" viewbox="0 0 24 24" height="128px" width="128px">
+    <g fill="#222222">
+      <path d="m 9 8 c -0.554688 0 -1 0.445312 -1 1 v 6 c 0 0.554688 0.445312 1 1 1 h 6 c 0.554688 0 1 -0.445312 1 -1 v -6 c 0 -0.554688 -0.445312 -1 -1 -1 z m 0 1 h 1 c 0.242188 0.007812 0.421875 0.082031 0.6875 0.3125 l 1.308594 1.277344 l 1.28125 -1.277344 c 0.183594 -0.1875 0.425781 -0.296875 0.6875 -0.3125 h 1.03125 v 1 c 0.027344 0.28125 -0.078125 0.554688 -0.28125 0.746094 l -1.28125 1.28125 l 1.28125 1.25 c 0.1875 0.1875 0.28125 0.453125 0.28125 0.71875 v 1 h -1 c -0.265625 -0.007813 -0.53125 -0.09375 -0.71875 -0.28125 l -1.28125 -1.28125 l -1.277344 1.28125 c -0.179688 0.199218 -0.453125 0.28125 -0.71875 0.28125 h -1 v -1 c -0.007812 -0.269532 0.09375 -0.527344 0.28125 -0.71875 l 1.246094 -1.25 l -1.277344 -1.28125 c -0.214844 -0.199219 -0.25 -0.460938 -0.25 -0.746094 z m 0 0"/>
+      <path d="m 7.5 0 c -4.128906 0 -7.5 3.371094 -7.5 7.5 c 0 3.960938 3.101562 7.222656 7 7.480469 v -2.199219 c -0.039062 -0.03125 -0.078125 -0.0625 -0.117188 -0.105469 c -0.234374 -0.238281 -0.480468 -0.625 -0.6875 -1.125 c -0.375 -0.898437 -0.632812 -2.152343 -0.683593 -3.550781 h 1.488281 v -1 h -1.488281 c 0.046875 -1.398438 0.308593 -2.65625 0.683593 -3.550781 c 0.207032 -0.503907 0.453126 -0.886719 0.6875 -1.125 c 0.234376 -0.238281 0.433594 -0.324219 0.617188 -0.324219 s 0.382812 0.085938 0.617188 0.324219 c 0.234374 0.238281 0.480468 0.625 0.6875 1.125 c 0.375 0.898437 0.632812 2.152343 0.683593 3.550781 h 1 c -0.050781 -1.515625 -0.320312 -2.882812 -0.757812 -3.9375 c -0.109375 -0.253906 -0.230469 -0.503906 -0.375 -0.742188 c 2.019531 0.71875 3.433593 2.546876 3.621093 4.679688 h 2.003907 c -0.257813 -3.898438 -3.519531 -7 -7.480469 -7 z m -1.855469 2.320312 c -0.144531 0.238282 -0.265625 0.488282 -0.375 0.742188 c -0.4375 1.054688 -0.707031 2.421875 -0.757812 3.9375 h -2.488281 c 0.1875 -2.132812 1.601562 -3.960938 3.621093 -4.679688 z m -3.621093 5.679688 h 2.488281 c 0.050781 1.515625 0.320312 2.882812 0.757812 3.9375 c 0.113281 0.269531 0.238281 0.515625 0.375 0.742188 c -2.019531 -0.71875 -3.433593 -2.546876 -3.621093 -4.679688 z m 0 0" fill-opacity="0.34902"/>
+    </g>
+  </svg>
+  <h1 id="msg-title">Unable to display this website</h1>
+  <p>The site at <strong>{failed_uri}</strong> seems to be unavailable.</p>
+  <p>It may be temporarily inaccessible or moved to a new address. You may wish to verify that your internet connection is working correctly.</p>
+  <div id="msg-details" class="visible">
+    <details>
+      <summary class="clickable">Technical information</summary>
+      <p>The precise error was: <i>{error}</i></p>
+    </details>
+  </div>
+  <div>
+    <button class="btn suggested-action" onclick="window.location.reload()">Reload</button>
+  </div>
+</body>
+</html>
+"""
+
+        # Load the custom error page into the WebView
+        self.get_current_webview().load_html(error_page_html)
 
 # Main application class
 class MyApp(Adw.Application):
@@ -667,6 +922,14 @@ class MyApp(Adw.Application):
         action3 = Gio.SimpleAction.new("remove_history_items", None)
         action3.connect("activate", self.remove_history_items)
         self.add_action(action3)
+
+        action4 = Gio.SimpleAction.new("history_item", GLib.VariantType("s"))
+        action4.connect("activate", self.history_item)
+        self.add_action(action4)
+
+        action5 = Gio.SimpleAction.new("bookmark_item", GLib.VariantType("s"))
+        action5.connect("activate", self.bookmark_item)
+        self.add_action(action5)
         
         self.version = version
         self.app_name = app_name
@@ -674,6 +937,12 @@ class MyApp(Adw.Application):
     def on_activate(self, app):
         self.win = MainWindow(application=app, app_name=self.app_name)
         self.win.present()
+
+    def history_item(self, action, param):
+        self.win.change_url(param.get_string())
+
+    def bookmark_item(self, action, param):
+        self.history_item(action, param)
         
     def create_new_tab(self, action, param):
         self.win.create_new_tab()
@@ -682,16 +951,16 @@ class MyApp(Adw.Application):
         self.win.remove_history_items()
         
     def show_about_dialog(self, action, param):
-        about_dialog = Gtk.AboutDialog()
-        about_dialog.set_program_name(self.app_name)
+        about_dialog = Adw.AboutDialog()
+        about_dialog.set_application_name(self.app_name)
         about_dialog.set_version(self.version)
         about_dialog.set_copyright(f"© {datetime.now().year} Twilight, Inc")
         about_dialog.set_comments("A simple web browser written in Python, GTK4, libadwaita, and WebKitGTK.")
         about_dialog.set_license_type(Gtk.License.GPL_3_0)
-        about_dialog.set_authors(["RedVelvetCake11"])
+        about_dialog.set_developers(["RedVelvetCake11"])
         about_dialog.set_website("https://rvc11.is-a.dev/weaver")
 
-        about_dialog.present()
+        about_dialog.present(self.win)
 
 def main(version, app_name):
     app = MyApp(application_id="org.twilight.weaver", version=version, app_name=app_name)
