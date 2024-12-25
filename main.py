@@ -23,6 +23,71 @@ import hashlib
 
 os.environ['GTK_INSPECTOR'] = '1'
 
+class PreferencesDialog(Adw.Window):
+    """
+    A simple preferences dialog with:
+      - A toggle to override website fonts (off by default)
+      - A font chooser (enabled only if toggle is on)
+      - A basic 'search' entry at the top
+    """
+    def __init__(self, parent, webview_settings: WebKit.Settings):
+        super().__init__(transient_for=parent, modal=True)
+        self.set_title("Preferences")
+        self.set_default_size(400, 300)
+ 
+        self._webview_settings = webview_settings
+ 
+        # Main container
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
+        self.set_content(box)
+ 
+        # 1) Search bar
+        search_label = Gtk.Label(label="Search Preferences:", halign=Gtk.Align.START)
+        self.search_entry = Gtk.SearchEntry()
+ 
+        search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        search_box.append(search_label)
+        search_box.append(self.search_entry)
+ 
+        box.append(search_box)
+ 
+        # 2) Toggle for overriding fonts
+        self.font_override_switch = Gtk.Switch()
+        self.font_override_switch.set_active(False)
+        self.font_override_switch.connect("state-set", self.on_font_override_toggled)
+ 
+        font_override_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        font_override_box.append(Gtk.Label(label="Override Website Fonts:", halign=Gtk.Align.START))
+        font_override_box.append(self.font_override_switch)
+ 
+        box.append(font_override_box)
+ 
+        # 3) Font chooser
+        self.font_button = Gtk.FontButton()
+        self.font_button.set_use_font(True)
+        self.font_button.set_use_size(False)
+        self.font_button.set_hexpand(True)
+        self.font_button.set_sensitive(False)
+        self.font_button.connect("font-set", self.on_font_picked)
+ 
+        box.append(self.font_button)
+ 
+    def on_font_override_toggled(self, switch, state):
+        """Enable or disable the font chooser when toggle is flipped."""
+        self.font_button.set_sensitive(state)
+ 
+        if not state:
+            # Reset to WebKit default if turning off override
+            self._webview_settings.set_property("default-font-family", "sans-serif")
+ 
+    def on_font_picked(self, font_button: Gtk.FontButton):
+        """When the user picks a font, override the web view's font setting."""
+        chosen_font = font_button.get_font()
+        # The 'default-font-family' property in WebKit2.Settings
+        # sets the general default font.  If you also want to handle
+        # monospace or serif fonts, you'd set those too.
+        self._webview_settings.set_property("default-font-family", chosen_font)
+
 # Helper function to generate profile name
 def generate_profile_name():
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
@@ -748,6 +813,7 @@ class MainWindow(Adw.ApplicationWindow):
         menu = Gio.Menu()
         menu.append("New tab", "app.new_tab")  # Menu item "New Tab"
         menu.append_submenu("History", self.history_submenu)
+        menu.append("Preferences", "app.preferences")
         menu.append(f"About {self.app_name}", "app.about")  # Menu item "About"
 
         # Set the menu to the button
@@ -766,6 +832,8 @@ class MainWindow(Adw.ApplicationWindow):
         self.tab_view.set_selected_page(tab)
         webview.connect("load-changed", self.on_webview_load_changed)
         webview.connect("load-failed", self.on_webview_load_failed)
+        self.webview_settings = webview.get_settings()
+ 
 
     def on_context_menu(self, webview, context_menu, hit_test_result):
         WebKit.ContextMenu.append(context_menu, WebKit.ContextMenuItem.new_separator())
@@ -911,6 +979,9 @@ class MyApp(Adw.Application):
         super().__init__(**kwargs)
         self.connect('activate', self.on_activate)
         
+        self.version = version
+        self.app_name = app_name
+        
         action1 = Gio.SimpleAction.new("about", None)
         action1.connect("activate", self.show_about_dialog)
         self.add_action(action1)
@@ -930,6 +1001,18 @@ class MyApp(Adw.Application):
         action5 = Gio.SimpleAction.new("bookmark_item", GLib.VariantType("s"))
         action5.connect("activate", self.bookmark_item)
         self.add_action(action5)
+        
+        preferences_action = Gio.SimpleAction.new("preferences", None)
+        preferences_action.connect("activate", self.on_preferences_activate)
+        self.add_action(preferences_action)
+ 
+    def on_preferences_activate(self, action, param):
+        """Handler for the app.preferences menu item."""
+        if not self.win:
+            return
+        # Create and show the preferences dialog
+        dialog = PreferencesDialog(self.win, self.win.webview_settings)
+        dialog.present()
         
         self.version = version
         self.app_name = app_name
