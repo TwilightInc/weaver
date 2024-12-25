@@ -630,7 +630,7 @@ class MainWindow(Adw.ApplicationWindow):
             selected_tab.set_loading(False)
             current_url = webview.get_uri()
 
-            if current_url != f'data:text/html,{self.html}':
+            if current_url != f'data:text/html,{self.html}' or current_url != f'about:blank':
                 self.url_entry.set_text(current_url)
 
                 if current_url.startswith("https://"):
