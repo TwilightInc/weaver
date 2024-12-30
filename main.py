@@ -20,6 +20,7 @@ from gi.repository import Gtk, Adw, WebKit, Gio, GLib, Gdk, GdkPixbuf, GObject
 from PIL import Image  # Import the Pillow library for image conversion
 import configparser
 import hashlib
+import adblockeryt as yt
 
 os.environ['GTK_INSPECTOR'] = '1'
 
@@ -38,19 +39,31 @@ class PreferencesDialog(Adw.Window):
         self._webview_settings = webview_settings
  
         # Main container
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
         self.set_content(box)
  
+        hb = Adw.HeaderBar()
+        self.set_title("Preferences")
+        hb.get_style_context().add_class("headerbar")
+        box.append(hb)
+
         # 1) Search bar
         search_label = Gtk.Label(label="Search Preferences:", halign=Gtk.Align.START)
-        self.search_entry = Gtk.SearchEntry()
+        search_entry = Gtk.SearchEntry()
+        searchbar = Gtk.SearchBar()
+        searchbar.connect_entry(search_entry)
+        searchbar.set_show_close_button(False)
+        searchbar.set_child(search_entry)
+        box.append(searchbar)
  
-        search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        search_box.append(search_label)
-        search_box.append(self.search_entry)
- 
-        box.append(search_box)
- 
+        button = Gtk.ToggleButton()
+        button.set_icon_name("system-search-symbolic")
+        button.bind_property("active", searchbar, "search-mode-enabled", GObject.BindingFlags.BIDIRECTIONAL)
+        hb.pack_start(button)
+
+        searchbar.set_key_capture_widget(self)
+
         # 2) Toggle for overriding fonts
         self.font_override_switch = Gtk.Switch()
         self.font_override_switch.set_active(False)
@@ -60,7 +73,7 @@ class PreferencesDialog(Adw.Window):
         font_override_box.append(Gtk.Label(label="Override Website Fonts:", halign=Gtk.Align.START))
         font_override_box.append(self.font_override_switch)
  
-        box.append(font_override_box)
+        box2.append(font_override_box)
  
         # 3) Font chooser
         self.font_button = Gtk.FontButton()
@@ -70,15 +83,31 @@ class PreferencesDialog(Adw.Window):
         self.font_button.set_sensitive(False)
         self.font_button.connect("font-set", self.on_font_picked)
  
-        box.append(self.font_button)
- 
+        box2.append(self.font_button)
+
+        box.append(box2)
+
+    def apply_hb_style(self):
+        css_provider = Gtk.CssProvider()
+        css_provider.load_from_data(b"""
+        .headerbar {
+            background-color: transparent;
+        }
+        """)
+
+        Gtk.StyleContext.add_provider_for_display(
+            self.get_display(),
+            css_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+     
     def on_font_override_toggled(self, switch, state):
         """Enable or disable the font chooser when toggle is flipped."""
         self.font_button.set_sensitive(state)
  
         if not state:
             # Reset to WebKit default if turning off override
-            self._webview_settings.set_property("default-font-family", "sans-serif")
+            WebKit.Settings.set_sans_serif_font_family(self._webview_settings, "sans-serif")
  
     def on_font_picked(self, font_button: Gtk.FontButton):
         """When the user picks a font, override the web view's font setting."""
@@ -86,7 +115,7 @@ class PreferencesDialog(Adw.Window):
         # The 'default-font-family' property in WebKit2.Settings
         # sets the general default font.  If you also want to handle
         # monospace or serif fonts, you'd set those too.
-        self._webview_settings.set_property("default-font-family", chosen_font)
+        WebKit.Settings.set_sans_serif_font_family(self._webview_settings, chosen_font)
 
 # Helper function to generate profile name
 def generate_profile_name():
@@ -111,112 +140,18 @@ def read_or_create_config():
     return profile_name
 
 class MainWindow(Adw.ApplicationWindow):
-    def __init__(self, app_name, *args, **kwargs):
+    def __init__(self, version, app_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.hb = Adw.HeaderBar()
+        self.settings = Gtk.Settings.get_default()
+        self.dark_mode = self.settings.get_property("gtk-application-prefer-dark-theme")
         self.app_name = app_name
-        self.html = f"""
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" dir="ltr">
-<head>
-  <meta http-equiv="content-type" content="text/html; charset=utf-8">
-  <title>Problem Loading Page</title>
-  <style>
-    /* Global CSS for error pages */
-    :root {{ 
-        --bg-color: #fafafa; 
-        --fg-color: rgba(0, 0, 0, 0.8); 
-        --base-color: #fff; 
-        --text-color: #000; 
-        --borders: #d3d7cf; 
-        --error-color: #c01c28;
-        --icon-invert: 0.2; /* icon color adjustment */
-        --error-filter: hue-rotate(-5.1deg) grayscale(45%) brightness(144%);
-        color-scheme: light dark;
-    }}
-    body {{
-        font-family: -webkit-system-font, Cantarell, sans-serif;
-        color: var(--fg-color);
-        background-color: var(--bg-color);
-        height: 100%;
-    }}
-    .error-body {{
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        max-width: 40em;
-        margin: auto;
-        padding-left: 12px;
-        padding-right: 12px;
-        line-height: 1.5;
-        height: 100%;
-    }}
-    .clickable {{
-        cursor: pointer;
-        opacity: 0.6;
-    }}
-    .clickable:hover, .clickable:focus {{
-        opacity: 0.8;
-    }}
-    #msg-title {{
-        text-align: center;
-        font-size: 20pt;
-        font-weight: 800;
-    }}
-    #msg-icon {{
-        margin-left: auto;
-        margin-right: auto;
-        width: 128px;
-        height: 128px;
-        background-size: cover;
-        opacity: 0.5;
-        filter: brightness(0) invert(var(--icon-invert));
-    }}
-    #msg-details {{
-        margin-top: 10px;
-        margin-bottom: 10px;
-    }}
-    .btn {{
-        min-width: 200px;
-        height: 32px;
-        margin-top: 15px;
-        margin-bottom: 0;
-        line-height: 1.42857143;
-        text-align: center;
-        white-space: nowrap;
-        vertical-align: middle;
-        cursor: pointer;
-        border: none;
-        border-radius: 5px;
-    }}
-    .suggested-action {{
-        color: white;
-        background-color: #3584e4;
-    }}
-    .suggested-action:hover, .suggested-action:focus, .suggested-action:active {{
-        color: white;
-        background-color: #3987e5;
-    }}
-    .destructive-action {{
-        color: white;
-        background-color: #e01b24;
-    }}
-    .destructive-action:hover, .destructive-action:focus, .destructive-action:active {{
-        color: white;
-        background-color: #e41c26;
-    }}
-  </style>
-</head>
-<body class="error-body">
-  <h1 id="msg-title">Work in progress</h1>
-  <p>This page is currently under construction.</p>
-  <p>Expect to see some changes soon.</p>
-  <div>
-    <button class="btn suggested-action" onclick="">Suggest a feature</button>
-  </div>
-</body>
-</html>
-"""
+        self.weaver_title = None
+        self.is_weaver_url = False
+        self.weaver_url = None
+        self.adblocker_yt_js = yt.get_javascript()
+        self.version = version
+
         # Create a Box for layout
         self.a = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
 
@@ -470,21 +405,355 @@ class MainWindow(Adw.ApplicationWindow):
         pass
 
     def on_url_activated(self, entry):
+        current_tab = self.tab_view.get_selected_page()
+        webview = current_tab.get_child()
+
         url = entry.get_text()
-        if url.startswith("file://"):
+        if url.startswith("file://") or url.startswith("weaver://"):
             url = url
+        elif url.startswith("about:blank"):
+            if isinstance(webview, WebKit.WebView):
+                webview.load_html('<html></html>')
         elif not re.search(r'.*\.[a-z]{2,6}(/.*)?$', url):
             url = f"https://www.duckduckgo.com/?q={url}"
         elif not url.startswith("http://") and not url.startswith("https://"):
             url = "http://" + url
 
-        current_tab = self.tab_view.get_selected_page()
-        webview = current_tab.get_child()
         if isinstance(webview, WebKit.WebView):
-            webview.load_uri(url)
+            if url.startswith("weaver://"):
+                self.is_weaver_url = True
+                self.weaver_url = url
+                self.load_weaver_page(url.replace("weaver://", ""))
+            else:
+                self.is_weaver_url = False
+                self.weaver_url = None
+                webview.load_uri(url)
 
         # Update navigation buttons after URL change
         self.update_navigation_buttons(webview)
+
+    def load_weaver_page(self, url):
+        current_tab = self.tab_view.get_selected_page()
+        webview = current_tab.get_child()
+        if isinstance(webview, WebKit.WebView):
+            if url == "home":
+                webview.load_html('test')
+            elif url == "about":
+                self.weaver_title = f"About {self.app_name}"
+                webview.load_html(f"""
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" dir="ltr">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta http-equiv="weaver-url" content="{url}">
+  <title>{self.weaver_title}</title>
+  <style>
+    /* Global CSS for error pages */
+    :root {{ 
+        --bg-color: {'#242424' if self.dark_mode else '#fafafa'}; 
+        --fg-color: {'rgba(255, 255, 255, 0.8)' if self.dark_mode else 'rgba(0, 0, 0, 0.8)'}; 
+        --base-color: {'#000' if self.dark_mode else '#fff'}; 
+        --text-color: {'#fff' if self.dark_mode else '#000'}; 
+        --borders: #d3d7cf; 
+        --error-color: #c01c28;
+        --icon-invert: 0.2; /* icon color adjustment */
+        --error-filter: hue-rotate(-5.1deg) grayscale(45%) brightness(144%);
+        color-scheme: light dark;
+    }}
+    body {{
+        font-family: -webkit-system-font, Cantarell, sans-serif;
+        color: var(--fg-color);
+        background-color: var(--bg-color);
+        height: 100%;
+    }}
+    .error-body {{
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        max-width: 40em;
+        margin: auto;
+        padding-left: 12px;
+        padding-right: 12px;
+        line-height: 1.5;
+        height: 100%;
+    }}
+    .clickable {{
+        cursor: pointer;
+        opacity: 0.6;
+    }}
+    .clickable:hover, .clickable:focus {{
+        opacity: 0.8;
+    }}
+    #msg-title {{
+        text-align: center;
+        font-size: 20pt;
+        font-weight: 800;
+    }}
+    #msg-subtitle {{
+        text-align: center;
+        font-size: 20pt;
+        font-weight: 800;
+        margin-top: 0px;
+        margin-bottom: 10px;
+    }}
+    #msg-icon {{
+        margin-left: auto;
+        margin-right: auto;
+        width: 128px;
+        height: 128px;
+        background-size: cover;
+    }}
+    #msg-details {{
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }}
+    #msg-body {{
+        text-align: center; 
+    }}
+    .btn {{
+        min-width: 200px;
+        height: 32px;
+        margin-top: 15px;
+        margin-bottom: 0;
+        line-height: 1.42857143;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: middle;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+    }}
+    .suggested-action {{
+        color: white;
+        background-color: #3584e4;
+    }}
+    .suggested-action:hover, .suggested-action:focus, .suggested-action:active {{
+        color: white;
+        background-color: #3987e5;
+    }}
+    .destructive-action {{
+        color: white;
+        background-color: #e01b24;
+    }}
+    .destructive-action:hover, .destructive-action:focus, .destructive-action:active {{
+        color: white;
+        background-color: #e41c26;
+    }}
+  </style>
+</head>
+<body class="error-body">
+  <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" id="msg-icon" width="128" height="128"><defs><clipPath id="i"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="Y"><path d="M79 0h49v128H79zm0 0"/></clipPath><clipPath id="b"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="Z"><path d="M479.988 20.078c0 110.453-89.543 200-200 200-110.453 0-200-89.547-200-200 0-110.457 89.547-200 200-200 110.457 0 200 89.543 200 200zm0 0"/></clipPath><clipPath id="c"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="q"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="p"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="d"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="o"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="e"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="n"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="f"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="m"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="g"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="l"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="h"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="k"><path d="M0 0h192v152H0z"/></clipPath><clipPath id="j"><path d="M0 0h192v152H0z"/></clipPath><mask id="S"><g filter="url(#a)"><path fill-opacity=".668" d="M0 0h128v128H0z"/></g></mask><mask id="ab"><g filter="url(#a)"><path fill-opacity=".5" d="M0 0h128v128H0z"/></g></mask><mask id="M"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="I"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="O"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="G"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="Q"><g filter="url(#a)"><path fill-opacity=".668" d="M0 0h128v128H0z"/></g></mask><mask id="E"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="t"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="C"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="U"><g filter="url(#a)"><path fill-opacity=".668" d="M0 0h128v128H0z"/></g></mask><mask id="A"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="W"><g filter="url(#a)"><path fill-opacity=".3" d="M0 0h128v128H0z"/></g></mask><mask id="y"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><mask id="v"><g filter="url(#a)"><path fill-opacity=".2" d="M0 0h128v128H0z"/></g></mask><mask id="K"><g filter="url(#a)"><path fill-opacity=".1" d="M0 0h128v128H0z"/></g></mask><g id="F" clip-path="url(#h)"><path d="M103.586 65.293h4v2h-4zm0 0" fill="#fff"/></g><g id="N" clip-path="url(#l)"><path d="M63.586 47.293h4v2h-4zm0 0" fill="#fff"/></g><g id="x" clip-path="url(#d)"><path d="M85.586 97.293h6v2h-6zm0 0" fill="#fff"/></g><g id="B" clip-path="url(#f)"><path d="M39.586 43.293h6v2h-6zm0 0" fill="#fff"/></g><g id="P" clip-path="url(#m)"><path d="M66.8 66.254c0 6.617-5.362 11.98-11.98 11.98-6.613 0-11.976-5.363-11.976-11.98s5.363-11.98 11.976-11.98c6.617 0 11.98 5.363 11.98 11.98zm0 0" fill="none" stroke-width="5.59" stroke-linejoin="round" stroke="#fff"/></g><g id="H" clip-path="url(#i)"><path d="M103.586 71.293h2v2h-2zm0 0" fill="#fff"/></g><g id="aa" clip-path="url(#q)"><path d="M169.336 19.172v3.531l.883.883.34.344.543-.543v-.684h.683l.2-.2v-.683l.882-.883h.684l.199-.199v-.683l-.883-.883zm8.113 0v1.765h1.598l.91 1.325v.441l.856.883v-4.414zm3.363 4.414l-.91.05-.855-.933v-.219h-1.078l-.442-.664h-.078v2.883l.301.43v1.762L179.047 28l.883-.883V24.47zm0 0" fill="#2e3436"/></g><g id="R" clip-path="url(#n)"><path d="M77.602 66.254c0 12.582-10.2 22.781-22.782 22.781-12.578 0-22.777-10.2-22.777-22.781 0-12.582 10.2-22.781 22.777-22.781 12.582 0 22.782 10.199 22.782 22.78zm0 0" fill="none" stroke-width="3.862" stroke-linejoin="round" stroke="#fff"/></g><g id="s" clip-path="url(#b)"><path d="M107.586 115.293v14a60.121 60.121 0 0012-12v-2zm0 0" fill="#fff"/></g><g id="J" clip-path="url(#j)"><path d="M113.586 71.293h6v2h-6zm0 0" fill="#fff"/></g><g id="T" clip-path="url(#o)"><path d="M88.879 66.254c0 18.808-15.246 34.058-34.059 34.058-18.808 0-34.058-15.25-34.058-34.058 0-18.813 15.25-34.059 34.058-34.059 18.813 0 34.059 15.246 34.059 34.059zm0 0" fill="none" stroke-width="1.98" stroke-linejoin="round" stroke="#fff"/></g><g id="D" clip-path="url(#g)"><path d="M47.586 67.293h4v2h-4zm0 0" fill="#fff"/></g><g id="z" clip-path="url(#e)"><path d="M33.586 77.293h4v2h-4zm0 0" fill="#fff"/></g><g id="V" clip-path="url(#p)"><path d="M55.176 70.605L17.512 107.16a59.63 59.63 0 006.293 10.336l5.379.176-1.914 3.973a60.081 60.081 0 009.851 8.722l3.3-7.43 15.067 16.094c.13.031.258.067.387.098zm0 0" fill-rule="evenodd" fill="#12121c"/></g><g id="L" clip-path="url(#k)"><path d="M101.586 45.148h4v2h-4zm0 0" fill="#fff"/></g><g id="u" clip-path="url(#c)"><path d="M71.586 21.293a60.068 60.068 0 00-24.477 5.219l8.477 6.781v8l8 8h4v-4l6-6v-4l4-4v-9.7c-1.992-.198-3.996-.3-6-.3zm-40.79 16a59.996 59.996 0 00-19.085 40.113l19.875 17.887v-6l-4-4 6-6h4l4 4 .125-8.402 5.875-5.598h4v-4l4-4v-6l-4.273-3.875-9.727-.125v8h-4l-4-4v-4l6-6h6v-4l-4-4zm70.79 2l-6 6v4h6v-2.145h4v4.27l-2 1.875h-10v4h-4v6h-8v8h10v-4h8v2l4 4h2v-2l-2-2v-2h4l6 6h6v2l-2 2h-4l16.652 16.652a60.002 60.002 0 00-15.805-54.652zm12 38h-12l-2-2h-14l-8 8v8l8 8h6l4 4v2l2 2v12l10 10a60.02 60.02 0 0012-12v-14l4-4v-8l-10-10zm-2-12h4l6 6h-4zm-74 28l-4 4v10l8.125 8.144-.086 17.836a59.466 59.466 0 007.96 3.84v-3.82l6-6v-4l6-6v-4l4-4v-8l-4-4h-8l-4-4zm0 0"/></g><radialGradient id="X" gradientUnits="userSpaceOnUse" cx="17.814" cy="24.149" fx="17.814" fy="24.149" r="9.125" gradientTransform="matrix(7.42904 0 0 7.1212 -88.327 -114.956)"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#e4e4e4"/></radialGradient><radialGradient id="w" gradientUnits="userSpaceOnUse" cx="46.511" cy="236.83" fx="46.511" fy="236.83" r="224" gradientTransform="matrix(.29041 -.00079 .00067 .24464 49.921 -16.608)"><stop offset="0" stop-color="#cee2f8"/><stop offset=".552" stop-color="#98c1f1"/><stop offset="1" stop-color="#62a0ea"/></radialGradient><radialGradient id="r" gradientUnits="userSpaceOnUse" cx="256" cy="-46.416" fx="256" fy="-46.416" r="224" gradientTransform="matrix(.29048 0 0 .29907 -10.777 55.175)"><stop offset="0" stop-color="#62a0ea"/><stop offset=".552" stop-color="#3584e4"/><stop offset="1" stop-color="#1a5fb4"/></radialGradient><filter id="a" filterUnits="objectBoundingBox" x="0%" y="0%" width="100%" height="100%"><feColorMatrix in="SourceGraphic" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0"/></filter></defs><path d="M39.11 8.512v2l4.011-.16.09-1.997zm0 0" fill-rule="evenodd" fill="#2967b4"/><path d="M3.71 59.41v2l4.013-.16.09-1.996zm0 0" fill-rule="evenodd" fill="#164e93"/><path d="M123.586 65.293c0 33.137-26.863 60-60 60s-60-26.863-60-60 26.863-60 60-60 60 26.863 60 60zm0 0" fill="url(#r)"/><use xlink:href="#s" transform="translate(-8 -16)" mask="url(#t)"/><use xlink:href="#u" transform="translate(-8 -16)" mask="url(#v)"/><path d="M105.586 59.293v2h4v-2zm0 0" fill-rule="evenodd" fill="#144788"/><path d="M63.586 3.293a60.068 60.068 0 00-24.477 5.219l8.477 6.781v8l8 8h4v-4l6-6v-4l4-4v-9.7c-1.992-.198-3.996-.3-6-.3zm-40.79 16A59.996 59.996 0 003.712 59.406l19.875 17.887v-6l-4-4 6-6h4l4 4 .125-8.402 5.875-5.598h4v-4l4-4v-6l-4.273-3.875-9.727-.125v8h-4l-4-4v-4l6-6h6v-4l-4-4zm70.79 2l-6 6v4h6v-2.145h4v4.27l-2 1.875h-10v4h-4v6h-8v8h10v-4h8v2l4 4h2v-2l-2-2v-2h4l6 6h6v2l-2 2h-4l16.652 16.652a60.002 60.002 0 00-15.805-54.652zm12 38h-12l-2-2h-14l-8 8v8l8 8h6l4 4v2l2 2v12l10 10a60.02 60.02 0 0012-12v-14l4-4v-8l-10-10zm-2-12h4l6 6h-4zm-74 28l-4 4v10l8.125 8.144-.086 17.836a59.466 59.466 0 007.96 3.84v-3.82l6-6v-4l6-6v-4l4-4v-8l-4-4h-8l-4-4zm0 0" fill="url(#w)"/><use xlink:href="#x" transform="translate(-8 -16)" mask="url(#y)"/><use xlink:href="#z" transform="translate(-8 -16)" mask="url(#A)"/><use xlink:href="#B" transform="translate(-8 -16)" mask="url(#C)"/><use xlink:href="#D" transform="translate(-8 -16)" mask="url(#E)"/><use xlink:href="#F" transform="translate(-8 -16)" mask="url(#G)"/><use xlink:href="#H" transform="translate(-8 -16)" mask="url(#I)"/><use xlink:href="#J" transform="translate(-8 -16)" mask="url(#K)"/><use xlink:href="#L" transform="translate(-8 -16)" mask="url(#M)"/><use xlink:href="#N" transform="translate(-8 -16)" mask="url(#O)"/><use xlink:href="#P" transform="translate(-8 -16)" mask="url(#Q)"/><use xlink:href="#R" transform="translate(-8 -16)" mask="url(#S)"/><use xlink:href="#T" transform="translate(-8 -16)" mask="url(#U)"/><use xlink:href="#V" transform="translate(-8 -16)" mask="url(#W)"/><path d="M47.176 50.605L-.59 96.97l21.774.703-9.13 18.965c-2.812 8.43 9.833 11.59 11.942 5.27l8.43-18.97 15.453 16.508zm0 0" fill-rule="evenodd" fill="url(#X)"/><path d="M47.176 50.605l-.246.239-31.16 73.781c3.148 1.277 7.12.586 8.222-2.719l8.43-18.969 15.457 16.508zm0 0" fill-rule="evenodd" fill="#e4e6e8"/><g clip-path="url(#Y)"><g clip-path="url(#Z)"><use xlink:href="#aa" transform="translate(-8 -16)" mask="url(#ab)"/></g></g></svg>
+  <h1 id="msg-title">Weaver</h1>
+  <h2 id="msg-subtitle" style="opacity: 0.55;">Version {self.version}</h2>
+  <p id="msg-body">A simple web browser written in Python, GTK4, libadwaita, and WebKitGTK</p>
+</body>
+</html>
+""")
+            elif url == "start":
+                self.weaver_title = f"Welcome to {self.app_name}"
+                webview.load_html(f"""
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" dir="ltr">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <title>{self.weaver_title}</title>
+  <style>
+    /* Global CSS for error pages */
+    :root {{ 
+        --bg-color: {'#242424' if self.dark_mode else '#fafafa'}; 
+        --fg-color: {'rgba(255, 255, 255, 0.8)' if self.dark_mode else 'rgba(0, 0, 0, 0.8)'}; 
+        --base-color: {'#000' if self.dark_mode else '#fff'}; 
+        --text-color: {'#fff' if self.dark_mode else '#000'}; 
+        --borders: #d3d7cf; 
+        --error-color: #c01c28;
+        --icon-invert: 0.2; /* icon color adjustment */
+        --error-filter: hue-rotate(-5.1deg) grayscale(45%) brightness(144%);
+        color-scheme: light dark;
+    }}
+    body {{
+        font-family: -webkit-system-font, Cantarell, sans-serif;
+        color: var(--fg-color);
+        background-color: var(--bg-color);
+        height: 100%;
+    }}
+    .error-body {{
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        max-width: 40em;
+        margin: auto;
+        padding-left: 12px;
+        padding-right: 12px;
+        line-height: 1.5;
+        height: 100%;
+    }}
+    .clickable {{
+        cursor: pointer;
+        opacity: 0.6;
+    }}
+    .clickable:hover, .clickable:focus {{
+        opacity: 0.8;
+    }}
+    #msg-title {{
+        text-align: center;
+        font-size: 20pt;
+        font-weight: 800;
+    }}
+    #msg-icon {{
+        margin-left: auto;
+        margin-right: auto;
+        width: 128px;
+        height: 128px;
+        background-size: cover;
+        opacity: 0.5;
+        filter: brightness(0) invert(var(--icon-invert));
+    }}
+    #msg-details {{
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }}
+    .btn {{
+        min-width: 200px;
+        height: 32px;
+        margin-top: 15px;
+        margin-bottom: 0;
+        line-height: 1.42857143;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: middle;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+    }}
+    .suggested-action {{
+        color: white;
+        background-color: #3584e4;
+    }}
+    .suggested-action:hover, .suggested-action:focus, .suggested-action:active {{
+        color: white;
+        background-color: #3987e5;
+    }}
+    .destructive-action {{
+        color: white;
+        background-color: #e01b24;
+    }}
+    .destructive-action:hover, .destructive-action:focus, .destructive-action:active {{
+        color: white;
+        background-color: #e41c26;
+    }}
+  </style>
+</head>
+<body class="error-body">
+  <h1 id="msg-title">Work in progress</h1>
+  <p>This page is currently under construction.</p>
+  <p>Expect to see some changes soon.</p>
+  <div>
+    <button class="btn suggested-action" onclick="">Suggest a feature</button>
+  </div>
+</body>
+</html>
+""")
+            else:
+                self.weaver_title = "Problem Loading Page"
+                webview.load_html(f"""
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en" dir="ltr">
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta http-equiv="weaver-url" content="{url}">
+  <title>{self.weaver_title}</title>
+  <style>
+    /* Global CSS for error pages */
+    :root {{ 
+        --bg-color: {'#242424' if self.dark_mode else '#fafafa'}; 
+        --fg-color: {'rgba(255, 255, 255, 0.8)' if self.dark_mode else 'rgba(0, 0, 0, 0.8)'}; 
+        --base-color: {'#000' if self.dark_mode else '#fff'}; 
+        --text-color: {'#fff' if self.dark_mode else '#000'}; 
+        --borders: #d3d7cf; 
+        --error-color: #c01c28;
+        --icon-invert: 0.2; /* icon color adjustment */
+        --error-filter: hue-rotate(-5.1deg) grayscale(45%) brightness(144%);
+        color-scheme: light dark;
+    }}
+    body {{
+        font-family: -webkit-system-font, Cantarell, sans-serif;
+        color: var(--fg-color);
+        background-color: var(--bg-color);
+        height: 100%;
+    }}
+    .error-body {{
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        max-width: 40em;
+        margin: auto;
+        padding-left: 12px;
+        padding-right: 12px;
+        line-height: 1.5;
+        height: 100%;
+    }}
+    .clickable {{
+        cursor: pointer;
+        opacity: 0.6;
+    }}
+    .clickable:hover, .clickable:focus {{
+        opacity: 0.8;
+    }}
+    #msg-title {{
+        text-align: center;
+        font-size: 20pt;
+        font-weight: 800;
+    }}
+    #msg-icon {{
+        margin-left: auto;
+        margin-right: auto;
+        width: 128px;
+        height: 128px;
+        background-size: cover;
+        opacity: 0.5;
+        filter: brightness(0) invert(var(--icon-invert));
+    }}
+    #msg-details {{
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }}
+    .btn {{
+        min-width: 200px;
+        height: 32px;
+        margin-top: 15px;
+        margin-bottom: 0;
+        line-height: 1.42857143;
+        text-align: center;
+        white-space: nowrap;
+        vertical-align: middle;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+    }}
+    .suggested-action {{
+        color: white;
+        background-color: #3584e4;
+    }}
+    .suggested-action:hover, .suggested-action:focus, .suggested-action:active {{
+        color: white;
+        background-color: #3987e5;
+    }}
+    .destructive-action {{
+        color: white;
+        background-color: #e01b24;
+    }}
+    .destructive-action:hover, .destructive-action:focus, .destructive-action:active {{
+        color: white;
+        background-color: #e41c26;
+    }}
+  </style>
+</head>
+<body class="error-body">
+  <h1 id="msg-title">Invalid URL</h1>
+  <p>The URL cannot be recognized by Weaver</p>
+</body>
+</html>
+""")
         
     def create_headerbar_buttons(self):
         # Back Button with symbolic icon
@@ -537,8 +806,11 @@ class MainWindow(Adw.ApplicationWindow):
         webview = current_tab.get_child()
         if isinstance(webview, WebKit.WebView):
             self.reload_icon.set_from_icon_name("process-stop")
-            webview.reload()
-    
+            if self.is_weaver_url == False:
+                webview.reload()
+            else:
+                self.load_weaver_page(self.weaver_url.replace("weaver://", ""))
+            
     def connect_navigation_signals(self):
         # Connect the history change signals for the current WebView
         current_webview = self.get_current_webview()
@@ -550,8 +822,13 @@ class MainWindow(Adw.ApplicationWindow):
         selected_tab = tab_view.get_selected_page()
         webview = selected_tab.get_child()
         if isinstance(webview, WebKit.WebView):
-            current_url = webview.get_uri()
-            self.url_entry.set_text(current_url)
+            if self.weaver_url and self.is_weaver_url == False:
+                self.is_weaver_url = True
+            else:
+                self.is_weaver_url = False
+            
+            current_url = self.weaver_url if self.is_weaver_url else webview.get_uri()
+            self.url_entry.set_text(current_url if current_url else '')
 
             # Update navigation buttons based on the new active tab's WebView
             self.update_navigation_buttons(webview)
@@ -694,35 +971,41 @@ class MainWindow(Adw.ApplicationWindow):
             selected_tab = self.tab_view.get_selected_page()
             selected_tab.set_loading(False)
             current_url = webview.get_uri()
+            self.reload_icon.set_from_icon_name("view-refresh-symbolic")
+            self.update_navigation_buttons(webview)
 
-            if current_url != f'data:text/html,{self.html}' or current_url != f'about:blank':
+            if current_url == "about:blank" and self.is_weaver_url == False:
+                selected_tab.set_title("Untitled")
+            elif self.is_weaver_url:
+                self.url_entry.set_text(self.weaver_url)
+                self.tab_view.get_selected_page().set_title(self.weaver_title)
+                self.set_title(f"{self.weaver_title} - Weaver")
+                self.add_to_history(self.weaver_url, self.weaver_title)
+                self.populate_history_submenu(self.history_submenu)
+                self.is_weaver_url = False
+            elif current_url != f'about:blank':
                 self.url_entry.set_text(current_url)
 
                 if current_url.startswith("https://"):
                     # Set lock icon for the URL entry
                     self.url_entry.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-lock-screen")
 
-                self.reload_icon.set_from_icon_name("view-refresh-symbolic")
-                self.update_navigation_buttons(webview)
-
                 # Fetch the HTML page to update the title
-                response = requests.get(current_url)
-                html = response.text
-                self.update_title_from_html(html)
-                self.set_title(f"{self.get_title_from_url(current_url)} - Weaver")
+                self.tab_view.get_selected_page().set_title(webview.get_title() if webview.get_title() else 'Untitled')
+                self.set_title(f"{webview.get_title()} - Weaver")
                     
                 if current_url.startswith("http://") or current_url.startswith("https://"):
                     self.current_url_to_bookmark = current_url
                     self.update_icon(current_url)
                     
                 # Save to history
-                self.add_to_history(current_url, self.get_title_from_url(current_url))
+                self.add_to_history(current_url, webview.get_title())
                 
                 # Add bookmark functionality
                 self.populate_history_submenu(self.history_submenu)
-            else:
-                self.reload_icon.set_from_icon_name("view-refresh-symbolic")
-                self.update_navigation_buttons(webview)
+
+                if "www.youtube.com" in current_url:
+                    WebKit.WebView.evaluate_javascript(webview, self.adblocker_yt_js, len(self.adblocker_yt_js), None, None)
 
     def get_base_url(self, url):
         # Extract the base URL (protocol + domain) from the full URL
@@ -783,20 +1066,6 @@ class MainWindow(Adw.ApplicationWindow):
             self.back_button.set_sensitive(webview.can_go_back())
             self.forward_button.set_sensitive(webview.can_go_forward())
 
-    def update_title_from_html(self, html):
-        title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
-        if title_match:
-            title = title_match.group(1)
-            self.update_tab_title(title)
-            
-    def get_title_from_url(self, url):
-        response = requests.get(url)
-        html = response.text
-        title_match = re.search(r'<title>(.*?)</title>', html, re.IGNORECASE)
-        if title_match:
-            title = title_match.group(1)
-            return title
-
     def update_tab_title(self, title):
         selected_tab = self.tab_view.get_selected_page()
         selected_tab.set_title(title)
@@ -822,7 +1091,6 @@ class MainWindow(Adw.ApplicationWindow):
 
     def create_new_tab(self, url=None):
         webview = WebKit.WebView()
-        webview.load_html(self.html)
         webview.connect("context-menu", self.on_context_menu)
         inspector = WebKit.WebView.get_inspector(webview)
         inspector.connect("attach", self.on_attach_inspector, webview)
@@ -830,6 +1098,7 @@ class MainWindow(Adw.ApplicationWindow):
         tab = self.tab_view.append(webview)
         tab.set_title(title)
         self.tab_view.set_selected_page(tab)
+        self.load_weaver_page("start")
         webview.connect("load-changed", self.on_webview_load_changed)
         webview.connect("load-failed", self.on_webview_load_failed)
         self.webview_settings = webview.get_settings()
@@ -863,10 +1132,10 @@ class MainWindow(Adw.ApplicationWindow):
   <style>
     /* Global CSS for error pages */
     :root {{ 
-        --bg-color: #fafafa; 
-        --fg-color: rgba(0, 0, 0, 0.8); 
-        --base-color: #fff; 
-        --text-color: #000; 
+        --bg-color: {'#242424' if self.dark_mode else '#fafafa'}; 
+        --fg-color: {'rgba(255, 255, 255, 0.8)' if self.dark_mode else 'rgba(0, 0, 0, 0.8)'}; 
+        --base-color: {'#000' if self.dark_mode else '#fff'}; 
+        --text-color: {'#fff' if self.dark_mode else '#000'}; 
         --borders: #d3d7cf; 
         --error-color: #c01c28;
         --icon-invert: 0.2; /* icon color adjustment */
@@ -1014,15 +1283,21 @@ class MyApp(Adw.Application):
         dialog = PreferencesDialog(self.win, self.win.webview_settings)
         dialog.present()
         
-        self.version = version
-        self.app_name = app_name
+        self.version = self.version
+        self.app_name = self.app_name
 
     def on_activate(self, app):
-        self.win = MainWindow(application=app, app_name=self.app_name)
+        self.win = MainWindow(version=self.version, application=app, app_name=self.app_name)
         self.win.present()
 
     def history_item(self, action, param):
-        self.win.change_url(param.get_string())
+        if param.get_string().startswith("weaver://"):
+            self.win.is_weaver_url = True
+            self.win.weaver_url = param.get_string()
+            self.win.url_entry.set_text(param.get_string())
+            self.win.load_weaver_page(param.get_string().replace("weaver://", ""))
+        else:
+            self.win.change_url(param.get_string())
 
     def bookmark_item(self, action, param):
         self.history_item(action, param)
@@ -1035,10 +1310,11 @@ class MyApp(Adw.Application):
         
     def show_about_dialog(self, action, param):
         about_dialog = Adw.AboutDialog()
+        about_dialog.set_application_icon("org.twilight.weaver")
         about_dialog.set_application_name(self.app_name)
         about_dialog.set_version(self.version)
         about_dialog.set_copyright(f"© {datetime.now().year} Twilight, Inc")
-        about_dialog.set_comments("A simple web browser written in Python, GTK4, libadwaita, and WebKitGTK.")
+        about_dialog.set_comments("A simple web browser written in Python, GTK4, libadwaita, and WebKitGTK")
         about_dialog.set_license_type(Gtk.License.GPL_3_0)
         about_dialog.set_developers(["RedVelvetCake11"])
         about_dialog.set_website("https://rvc11.is-a.dev/weaver")
