@@ -24,7 +24,7 @@ import adblockeryt as yt
 
 os.environ['GTK_INSPECTOR'] = '1'
 
-class PreferencesDialog(Adw.Window):
+class PreferencesDialog(Adw.PreferencesDialog):
     """
     A simple preferences dialog with:
       - A toggle to override website fonts (off by default)
@@ -32,16 +32,15 @@ class PreferencesDialog(Adw.Window):
       - A basic 'search' entry at the top
     """
     def __init__(self, parent, webview_settings: WebKit.Settings):
-        super().__init__(transient_for=parent, modal=True)
+        super().__init__()
         self.set_title("Preferences")
-        self.set_default_size(400, 300)
  
         self._webview_settings = webview_settings
  
         # Main container
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         box2 = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
-        self.set_content(box)
+        self.set_child(box)
  
         hb = Adw.HeaderBar()
         self.set_title("Preferences")
@@ -63,15 +62,15 @@ class PreferencesDialog(Adw.Window):
         hb.pack_start(button)
 
         searchbar.set_key_capture_widget(self)
-
-        # 2) Toggle for overriding fonts
-        self.font_override_switch = Gtk.Switch()
-        self.font_override_switch.set_active(False)
-        self.font_override_switch.connect("state-set", self.on_font_override_toggled)
  
         font_override_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        font_override_box.append(Gtk.Label(label="Override Website Fonts:", halign=Gtk.Align.START))
-        font_override_box.append(self.font_override_switch)
+        font_override_setting = Adw.PreferencesGroup()
+        font_override_setting.set_title("Font Override")
+        font_override_setting_1 = Adw.SwitchRow()
+        font_override_setting_1.set_title("Enable font overriding")
+        font_override_setting.add(font_override_setting_1)
+        font_override_setting_1.connect("notify::active", self.on_font_override_toggled)
+        font_override_box.append(font_override_setting)
  
         box2.append(font_override_box)
  
@@ -82,6 +81,11 @@ class PreferencesDialog(Adw.Window):
         self.font_button.set_hexpand(True)
         self.font_button.set_sensitive(False)
         self.font_button.connect("font-set", self.on_font_picked)
+
+        font_override_setting_2 = Adw.ActionRow()
+        font_override_setting_2.set_title("Choose a font")
+        font_override_setting_2.add_suffix(self.font_button)
+        font_override_setting.add(font_override_setting_2)
  
         box2.append(self.font_button)
 
@@ -1281,7 +1285,7 @@ class MyApp(Adw.Application):
             return
         # Create and show the preferences dialog
         dialog = PreferencesDialog(self.win, self.win.webview_settings)
-        dialog.present()
+        Adw.Dialog.present(dialog, self.win)
         
         self.version = self.version
         self.app_name = self.app_name
