@@ -1310,7 +1310,7 @@ class MyApp(Adw.Application):
         
     def show_about_dialog(self, action, param):
         about_dialog = Adw.AboutDialog()
-        about_dialog.set_application_icon("org.twilight.weaver")
+        about_dialog.set_application_icon("org.twilight.Weaver")
         about_dialog.set_application_name(self.app_name)
         about_dialog.set_version(self.version)
         about_dialog.set_copyright(f"© {datetime.now().year} Twilight, Inc")

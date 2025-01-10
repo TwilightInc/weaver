@@ -2,6 +2,6 @@
 Name=Weaver
 Comment=Weaver
 Exec=weaver
-Icon=org.twilight.weaver
+Icon=org.twilight.Weaver
 Type=Application
 Categories=Internet;
