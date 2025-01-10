@@ -20,10 +20,10 @@ install:
 	cp ./adblockeryt.py $(install_dir)/weaver/
 
 	# Copy the icon to the appropriate directory
-	cp ./data/icons/hicolor/scalable/apps/org.twilight.weaver.svg $(icon_dir)/
+	cp ./data/icons/hicolor/scalable/apps/org.twilight.Weaver.Devel.svg $(icon_dir)/
 
 	# Copy the desktop file to the appropriate directory
-	cp ./data/applications/org.twilight.Weaver.desktop $(desktop_dir)/
+	cp ./data/applications/org.twilight.Weaver.Devel.desktop $(desktop_dir)/
 
 	# Create a symbolic link in the bin directory
 	ln -sf $(install_dir)/weaver/main.py $(bin_dir)/weaver

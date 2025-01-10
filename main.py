@@ -23,6 +23,7 @@ import hashlib
 import adblockeryt as yt
 
 VERSION="1.0"
+APP_NAME="Weaver (Development)"
 
 os.environ['GTK_INSPECTOR'] = '1'
 
@@ -1318,7 +1319,7 @@ class MyApp(Adw.Application):
         
     def show_about_dialog(self, action, param):
         about_dialog = Adw.AboutDialog()
-        about_dialog.set_application_icon("org.twilight.weaver")
+        about_dialog.set_application_icon("org.twilight.Weaver.Devel")
         about_dialog.set_application_name(self.app_name)
         about_dialog.set_version(self.version)
         about_dialog.set_copyright(f"© {datetime.now().year} Twilight, Inc")
@@ -1336,4 +1337,4 @@ def main(version, app_name):
 if __name__ == '__main__':
     if not os.path.exists(os.path.expanduser('~/.weaver')):
         os.makedirs(os.path.expanduser('~/.weaver'), exist_ok=True)  # Create ~/.weaver if it doesn't exist'/.weaver')
-    main(VERSION, 'Weaver')
+    main(VERSION, APP_NAME)

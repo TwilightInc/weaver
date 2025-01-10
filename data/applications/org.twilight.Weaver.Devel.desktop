@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Weaver (Development)
+Comment=Weaver
+Exec=weaver
+Icon=org.twilight.Weaver.Devel
+Type=Application
+Categories=Internet;
