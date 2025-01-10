@@ -332,6 +332,8 @@ class MainWindow(Adw.ApplicationWindow):
         # Add history items to the submenu
         for url, title, timestamp in history_entries:
             # Create a Gio.MenuItem for each history entry
+            if len(title) > 20:
+                title = title[:20] + "..."
             menu_item = Gio.MenuItem.new(f"{title}", f"app.history_item('{url}')")
             history_items.append_item(menu_item)
             
