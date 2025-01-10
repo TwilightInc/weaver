@@ -1,24 +1,15 @@
-# Define the prefix (default is user-local installation)
+# Set default prefix (local user installation)
 prefix ?= $(HOME)/.local
 
-# Define installation directories based on the prefix
-install_dir := $(prefix)/lib
-bin_dir := $(prefix)/bin
-icon_dir := $(prefix)/share/icons/hicolor/scalable/apps
-desktop_dir := $(prefix)/share/applications
+# Installation directories
+install_dir := $(DESTDIR)$(prefix)/lib
+bin_dir := $(DESTDIR)$(prefix)/bin
+icon_dir := $(DESTDIR)$(prefix)/share/icons/hicolor/scalable/apps
+desktop_dir := $(DESTDIR)$(prefix)/share/applications
 
-# Check if running as root (id -u == 0)
-ifeq ($(shell id -u),0)
-	prefix ?= /usr
-	install_dir := $(prefix)/lib
-	bin_dir := $(prefix)/bin
-	icon_dir := $(prefix)/share/icons/hicolor/scalable/apps
-	desktop_dir := $(prefix)/share/applications
-endif
-
-# Create necessary directories for the installation
+# Installation rules
 install:
-	# Create the directories for the installation
+	# Create necessary directories
 	mkdir -p $(install_dir)/weaver
 	mkdir -p $(icon_dir)
 	mkdir -p $(bin_dir)
@@ -37,4 +28,5 @@ install:
 	# Create a symbolic link in the bin directory
 	ln -sf $(install_dir)/weaver/main.py $(bin_dir)/weaver
 
+	# Print installation success message
 	echo "Installation completed successfully to $(install_dir), $(bin_dir), $(icon_dir), and $(desktop_dir)."
