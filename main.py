@@ -1331,7 +1331,7 @@ class MyApp(Adw.Application):
         about_dialog.present(self.win)
 
 def main(version, app_name):
-    app = MyApp(application_id="org.twilight.weaver", version=version, app_name=app_name)
+    app = MyApp(application_id="org.twilight.Weaver.Devel", version=version, app_name=app_name)
     return app.run(sys.argv)
 
 if __name__ == '__main__':
