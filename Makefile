@@ -1,16 +1,19 @@
-# Define installation directories
-install_dir := $(HOME)/.local/lib
-bin_dir := $(HOME)/.local/bin
-icon_dir := $(HOME)/.local/share/icons/hicolor/scalable/apps
-desktop_dir := $(HOME)/.local/share/applications
+# Define the prefix (default is user-local installation)
+prefix ?= $(HOME)/.local
+
+# Define installation directories based on the prefix
+install_dir := $(prefix)/lib
+bin_dir := $(prefix)/bin
+icon_dir := $(prefix)/share/icons/hicolor/scalable/apps
+desktop_dir := $(prefix)/share/applications
 
 # Check if running as root (id -u == 0)
 ifeq ($(shell id -u),0)
-	# If root, set installation directories to system-wide paths
-	install_dir := /usr/lib
-	bin_dir := /usr/bin
-	icon_dir := /usr/share/icons/hicolor/scalable/apps
-	desktop_dir := /usr/share/applications
+	prefix ?= /usr
+	install_dir := $(prefix)/lib
+	bin_dir := $(prefix)/bin
+	icon_dir := $(prefix)/share/icons/hicolor/scalable/apps
+	desktop_dir := $(prefix)/share/applications
 endif
 
 # Create necessary directories for the installation

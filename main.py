@@ -22,6 +22,8 @@ import configparser
 import hashlib
 import adblockeryt as yt
 
+VERSION="1.0"
+
 os.environ['GTK_INSPECTOR'] = '1'
 
 class PreferencesDialog(Adw.PreferencesDialog):
@@ -1334,4 +1336,4 @@ def main(version, app_name):
 if __name__ == '__main__':
     if not os.path.exists(os.path.expanduser('~/.weaver')):
         os.makedirs(os.path.expanduser('~/.weaver'), exist_ok=True)  # Create ~/.weaver if it doesn't exist'/.weaver')
-    main('1.0', 'Weaver')
+    main(VERSION, 'Weaver')
